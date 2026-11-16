@@ -1,0 +1,53 @@
+== 1. starting anvil ==
+== 2. deploying MockTUSD8 + AgentVault ==
+token: 0x5fbdb2315678afecb367f032d93f642f64180aa3
+vault: 0xe7f1725e7734ce288f8367e1bb143e90bb3f0512
+== 3. owner funds the vault with 1000 tUSD8 ==
+vault balance: 0x000000000000000000000000000000000000000000000000000000003b9aca00 base units (6 decimals)
+== 4. owner grants the agent a session: cap 500, per-tx 200, 24h, allowlist 3 payees ==
+session 0 created
+== 5. agent dry-run (decisions only) ==
+== AgentPay Guard — payment agent ==
+chain: unknown (31337)  vault: 0xe7f1725e7734ce288f8367e1bb143e90bb3f0512
+agent: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8  session: 0  mode: DRY RUN
+session: cap 500.0  per-tx 200.0  spent 0.0  remaining 500.0  expires in 86400s  revoked: false
+[WOULD PAY] INV-001 -> Alice — brand design 150 tUSD8 — passes all guardrails
+[WOULD PAY] INV-002 -> Bob — frontend work 180 tUSD8 — passes all guardrails
+[REJECT] INV-003 -> Carol — video edit 250 tUSD8 — amount 250 exceeds per-payment cap 200.0
+[REJECT] INV-004 -> Unknown vendor 50 tUSD8 — recipient not on session allowlist
+
+proposal log written to web/proposals.json
+summary: 0 paid, 2 rejected, 2 other
+vault balance now: 1000.0 tUSD8 | session remaining: 500.0 tUSD8
+== 6. agent executes the invoice batch ==
+== AgentPay Guard — payment agent ==
+chain: unknown (31337)  vault: 0xe7f1725e7734ce288f8367e1bb143e90bb3f0512
+agent: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8  session: 0  mode: EXECUTE
+session: cap 500.0  per-tx 200.0  spent 0.0  remaining 500.0  expires in 86399s  revoked: false
+[PAID] INV-001 -> Alice — brand design 150 tUSD8 — tx 0x1e47de8f4e39ad8e0e2b303e8d843ef447aba84d5e13dc1bfb05a771c02180b7
+[PAID] INV-002 -> Bob — frontend work 180 tUSD8 — tx 0x8899acc905b7d22c6f68792a344804042ba6d6d6439a717913dad4669529e12b
+[REJECT] INV-003 -> Carol — video edit 250 tUSD8 — amount 250 exceeds per-payment cap 200.0
+[REJECT] INV-004 -> Unknown vendor 50 tUSD8 — recipient not on session allowlist
+
+proposal log written to web/proposals.json
+summary: 2 paid, 2 rejected, 0 other
+vault balance now: 670.0 tUSD8 | session remaining: 170.0 tUSD8
+== 7. verify payee balances ==
+0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC -> 0x0000000000000000000000000000000000000000000000000000000008f0d180 base units
+0x90F79bf6EB2c4f870365E785982E1f101E93b906 -> 0x000000000000000000000000000000000000000000000000000000000aba9500 base units
+0x15d34AAf54267DB7EE8cD6fB0802D8c9E47e9F11 -> 0x0000000000000000000000000000000000000000000000000000000000000000 base units
+0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc -> 0x0000000000000000000000000000000000000000000000000000000000000000 base units
+== 8. owner revokes the session; agent re-run must reject everything ==
+== AgentPay Guard — payment agent ==
+chain: unknown (31337)  vault: 0xe7f1725e7734ce288f8367e1bb143e90bb3f0512
+agent: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8  session: 0  mode: EXECUTE
+session: cap 500.0  per-tx 200.0  spent 330.0  remaining 0.0  expires in 86398s  revoked: true
+[REJECT] INV-001 -> Alice — brand design 150 tUSD8 — session revoked
+[REJECT] INV-002 -> Bob — frontend work 180 tUSD8 — session revoked
+[REJECT] INV-003 -> Carol — video edit 250 tUSD8 — session revoked
+[REJECT] INV-004 -> Unknown vendor 50 tUSD8 — session revoked
+
+proposal log written to web/proposals.json
+summary: 0 paid, 4 rejected, 0 other
+vault balance now: 670.0 tUSD8 | session remaining: 0.0 tUSD8
+== e2e complete ==

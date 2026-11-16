@@ -1,0 +1,33 @@
+{
+  "_notes": "Payee addresses are anvil's well-known local test accounts 2-5. INV-003 exceeds the demo session's 200 tUSD8 per-payment cap and must be rejected. INV-004's payee is not on the session allowlist and must be rejected. On Aevum, replace with real recipient addresses.",
+  "invoices": [
+    {
+      "amount": "150",
+      "id": "INV-001",
+      "memo": "INV-001 brand design, milestone 2 of 3",
+      "payee": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+      "payeeName": "Alice — brand design"
+    },
+    {
+      "amount": "180",
+      "id": "INV-002",
+      "memo": "INV-002 frontend sprint, week 46",
+      "payee": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+      "payeeName": "Bob — frontend work"
+    },
+    {
+      "amount": "250",
+      "id": "INV-003",
+      "memo": "INV-003 video edit, final cut",
+      "payee": "0x15d34aaf54267db7ee8cd6fb0802d8c9e47e9f11",
+      "payeeName": "Carol — video edit"
+    },
+    {
+      "amount": "50",
+      "id": "INV-004",
+      "memo": "INV-004 unsolicited invoice",
+      "payee": "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc",
+      "payeeName": "Unknown vendor"
+    }
+  ]
+}

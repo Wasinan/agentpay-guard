@@ -1,0 +1,47 @@
+{
+  "generatedAt": "2026-11-16T11:33:19.353Z",
+  "vault": "0xf41aA12e0F4152953e7bAe68a1E562a6CD7967B8",
+  "sessionId": "1",
+  "proposals": [
+    {
+      "id": "INV-001",
+      "payee": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "payeeName": "Alice — brand design",
+      "amount": "0.15",
+      "memo": "INV-001 brand design, milestone 2 of 3",
+      "status": "executed",
+      "reason": "passes all guardrails",
+      "txHash": "0x3b0f3de05fc50c606b8caf55d62e117c7b75d20e8f9aa3a0591226dd75947b04",
+      "explorerUrl": "https://explorer-test.qday.info/tx/0x3b0f3de05fc50c606b8caf55d62e117c7b75d20e8f9aa3a0591226dd75947b04"
+    },
+    {
+      "id": "INV-002",
+      "payee": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "payeeName": "Bob — frontend work",
+      "amount": "0.18",
+      "memo": "INV-002 frontend sprint, week 46",
+      "status": "executed",
+      "reason": "passes all guardrails",
+      "txHash": "0x9b2bae598eb1128c4af80b0d577d42fee496b45f46fca0eabe5b2357975533e0",
+      "explorerUrl": "https://explorer-test.qday.info/tx/0x9b2bae598eb1128c4af80b0d577d42fee496b45f46fca0eabe5b2357975533e0"
+    },
+    {
+      "id": "INV-003",
+      "payee": "0x15D34aAF54267db7EE8cd6Fb0802D8c9e47E9F11",
+      "payeeName": "Carol — video edit",
+      "amount": "0.25",
+      "memo": "INV-003 video edit, final cut",
+      "status": "rejected",
+      "reason": "amount 0.25 exceeds per-payment cap 0.2"
+    },
+    {
+      "id": "INV-004",
+      "payee": "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",
+      "payeeName": "Unknown vendor",
+      "amount": "0.05",
+      "memo": "INV-004 unsolicited invoice",
+      "status": "rejected",
+      "reason": "recipient not on session allowlist"
+    }
+  ]
+}

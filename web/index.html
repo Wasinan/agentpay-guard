@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentPay Guard — AI payments with on-chain guardrails</title>
+<style>
+  :root { --bg:#0f1220; --card:#1a1e33; --line:#2a2f4d; --text:#e8eaf6; --muted:#9aa0c3;
+         --accent:#6c8cff; --good:#3ecf8e; --bad:#f26d6d; --warn:#f5b544; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:var(--bg); color:var(--text); }
+  header { padding:20px 24px; border-bottom:1px solid var(--line); display:flex;
+           flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; }
+  h1 { font-size:20px; margin:0; }
+  h1 small { display:block; font-size:13px; color:var(--muted); font-weight:400; margin-top:4px; }
+  main { max-width:1060px; margin:0 auto; padding:20px 24px 48px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .card h2 { font-size:15px; margin:0 0 12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }
+  button, input, select, textarea { font:inherit; border-radius:8px; }
+  button { background:var(--accent); color:#fff; border:0; padding:9px 16px; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
+  button.danger { background:var(--bad); }
+  input, select, textarea { background:#0f1220; color:var(--text); border:1px solid var(--line);
+                            padding:9px 10px; width:100%; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  label:first-child { margin-top:0; }
+  .stat { font-size:26px; font-weight:650; }
+  .muted { color:var(--muted); font-size:13px; }
+  .bar { height:10px; background:#0f1220; border-radius:6px; overflow:hidden; margin-top:8px; }
+  .bar > div { height:100%; background:var(--accent); }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; }
+  .ok { background:#123b2a; color:var(--good); } .no { background:#3d1a1a; color:var(--bad); }
+  .warn { background:#3d2f10; color:var(--warn); } .info { background:#1d2a52; color:var(--accent); }
+  .chip { display:inline-block; background:#0f1220; border:1px solid var(--line); border-radius:8px;
+          padding:4px 8px; font-size:12px; font-family:ui-monospace,monospace; margin:2px 4px 2px 0; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  td, th { padding:8px 6px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  a { color:var(--accent); }
+  .mono { font-family:ui-monospace,monospace; font-size:12px; word-break:break-all; }
+  #status { min-height:20px; font-size:14px; }
+  .error { color:var(--bad); } .success { color:var(--good); }
+  footer { text-align:center; color:var(--muted); font-size:12px; padding:0 24px 32px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AgentPay Guard <small>An AI assistant that can pay — but only inside guardrails enforced on-chain.</small></h1>
+  <div class="row">
+    <select id="network" style="width:auto">
+      <option value="aevum">Aevum Testnet (44005)</option>
+      <option value="local">Local Anvil (31337)</option>
+    </select>
+    <button id="connectBtn">Connect wallet</button>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <h2>Vault</h2>
+    <div class="row">
+      <input id="vaultInput" placeholder="AgentVault contract address" style="flex:1" spellcheck="false">
+      <button id="loadBtn" class="ghost">Load</button>
+    </div>
+    <p id="status" class="muted">Connect a wallet, then paste the deployed vault address (or use the default once deployed).</p>
+    <div class="grid" style="margin-top:12px">
+      <div><div class="muted">Vault tUSD8 balance</div><div class="stat" id="vaultBalance">—</div></div>
+      <div><div class="muted">Your account</div><div class="mono" id="account">not connected</div>
+           <div class="muted" id="roleLine"></div></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Active session</h2>
+      <div class="row">
+        <select id="sessionSelect" style="flex:1"></select>
+        <button id="refreshBtn" class="ghost">Refresh</button>
+      </div>
+      <div id="sessionBox" style="margin-top:12px"><p class="muted">No session loaded.</p></div>
+      <div class="row" style="margin-top:12px">
+        <button id="revokeBtn" class="danger" disabled>Revoke session instantly</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Owner actions</h2>
+      <label>Deposit tUSD8 into the vault</label>
+      <div class="row"><input id="depositAmt" type="number" min="0" step="any" placeholder="Amount (tUSD8)"><button id="depositBtn">Deposit</button></div>
+      <label>Withdraw tUSD8 back to owner</label>
+      <div class="row"><input id="withdrawAmt" type="number" min="0" step="any" placeholder="Amount (tUSD8)"><button id="withdrawBtn" class="ghost">Withdraw</button></div>
+      <label>Grant a new session to an agent</label>
+      <input id="sessAgent" placeholder="Agent address (0x…)" spellcheck="false">
+      <div class="row">
+        <input id="sessCap" type="number" min="0" step="any" placeholder="Total cap">
+        <input id="sessPerTx" type="number" min="0" step="any" placeholder="Per-payment cap">
+        <input id="sessHours" type="number" min="1" step="any" placeholder="Expires in hours">
+      </div>
+      <textarea id="sessRecipients" rows="2" placeholder="Allowlisted recipients, one address per line" spellcheck="false"></textarea>
+      <div class="row" style="margin-top:10px"><button id="createBtn">Create session</button></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Agent proposals</h2>
+    <p class="muted">Decisions from the last agent run (<span class="mono">agent/agent.mjs</span>). The agent checks every guardrail before sending anything; the contract re-checks on-chain.</p>
+    <div id="proposals"><p class="muted">No proposal log found yet — run the agent to generate one.</p></div>
+  </div>
+
+  <div class="card">
+    <h2>On-chain audit log</h2>
+    <p class="muted">Every vault event, newest first. Links open the Aevum explorer.</p>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Event</th><th>Details</th><th>Tx</th></tr></thead>
+      <tbody id="auditBody"><tr><td colspan="3" class="muted">Load a vault to see its audit trail.</td></tr></tbody>
+    </table></div>
+  </div>
+</main>
+
+<footer>
+  AgentPay Guard — Aevum Builder Challenge #1 (Native AI Assistants track). Testnet only: tUSD8 has no value.
+  The vault contract is the guardrail: caps, expiry, allowlist, and revocation are enforced on-chain, not by the agent's goodwill.
+</footer>
+
+<script type="module">
+import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.17.0/+esm";
+
+// --- Config ---------------------------------------------------------------
+const VAULT_ADDRESS = "0xf41aA12e0F4152953e7bAe68a1E562a6CD7967B8"; // deployed on Aevum testnet 2026-11-16
+const TUSD8_AEVUM = "0x456569838f1d43009A91ebA4263147Afd7233483";
+const NETWORKS = {
+  aevum: { chainId: 44005, hex: "0xABE5", rpc: "https://rpc-test.qday.info",
+           explorer: "https://explorer-test.qday.info", name: "Aevum Testnet", currency: "tQDAY" },
+  local: { chainId: 31337, hex: "0x7A69", rpc: "http://127.0.0.1:8545",
+           explorer: "", name: "Local Anvil", currency: "ETH" },
+};
+const VAULT_ABI = [
+  "function token() view returns (address)",
+  "function owner() view returns (address)",
+  "function vaultBalance() view returns (uint256)",
+  "function sessionCount() view returns (uint256)",
+  "function deposit(uint256 amount)",
+  "function withdraw(uint256 amount)",
+  "function createSession(address agent, uint256 cap, uint256 perTxCap, uint256 expiry, address[] recipients) returns (uint256)",
+  "function revokeSession(uint256 sessionId)",
+  "function getSession(uint256) view returns (address agent, uint256 cap, uint256 perTxCap, uint256 expiry, uint256 spent, bool revoked, address[] recipients)",
+  "function remainingCap(uint256) view returns (uint256)",
+  "event Deposited(address indexed from, uint256 amount, uint256 vaultBalanceAfter)",
+  "event Withdrawn(address indexed to, uint256 amount, uint256 vaultBalanceAfter)",
+  "event SessionCreated(uint256 indexed sessionId, address indexed agent, uint256 cap, uint256 perTxCap, uint256 expiry, address[] recipients)",
+  "event SessionRevoked(uint256 indexed sessionId, address indexed agent)",
+  "event PaymentExecuted(uint256 indexed sessionId, address indexed agent, address indexed to, uint256 amount, string memo, uint256 sessionSpentAfter)",
+];
+const ERC20_ABI = [
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function balanceOf(address) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+];
+
+// --- State ----------------------------------------------------------------
+let provider, signer, account, vault, token, decimals = 6;
+let currentSession = 0;
+let countdownTimer = null;
+const $ = (id) => document.getElementById(id);
+const net = () => NETWORKS[$("network").value];
+const fmt = (v) => ethers.formatUnits(v, decimals);
+const short = (a) => a ? a.slice(0, 6) + "…" + a.slice(-4) : "";
+const explorerTx = (h) => net().explorer ? `<a href="${net().explorer}/tx/${h}" target="_blank" rel="noopener">${short(h)}</a>` : `<span class="mono">${short(h)}</span>`;
+
+// Plain-language translations of contract reverts.
+const FRIENDLY_ERRORS = {
+  NotOwner: "Only the vault owner can do that.",
+  NotSessionAgent: "Only the session's agent address can execute payments.",
+  SessionRevoked: "This session was revoked. Create a new session to grant access again.",
+  SessionExpired: "This session has expired.",
+  ExceedsPerTxCap: "Amount is above the session's per-payment cap.",
+  ExceedsSessionCap: "Amount is above what remains of the session's total cap.",
+  RecipientNotAllowed: "That recipient is not on the session allowlist.",
+  InsufficientVaultBalance: "The vault does not hold enough tUSD8.",
+  InvalidExpiry: "Expiry must be in the future.",
+  InvalidCap: "Caps must be above zero and the per-payment cap cannot exceed the total cap.",
+  EmptyAllowlist: "Add at least one allowlisted recipient.",
+};
+function explain(err) {
+  const msg = err?.shortMessage || err?.reason || err?.message || String(err);
+  for (const [key, text] of Object.entries(FRIENDLY_ERRORS)) {
+    if (msg.includes(key)) return text;
+  }
+  if (msg.includes("user rejected") || msg.includes("denied")) return "Transaction rejected in the wallet.";
+  if (msg.includes("insufficient funds")) return "Not enough gas tokens (tQDAY) — claim from the faucet.";
+  return msg;
+}
+function setStatus(text, kind = "") {
+  const el = $("status");
+  el.textContent = text;
+  el.className = kind;
+}
+
+// --- Wallet ---------------------------------------------------------------
+async function connect() {
+  if (!window.ethereum) { setStatus("No wallet found. Install MetaMask (or any EIP-1193 wallet) to use the demo.", "error"); return; }
+  try {
+    provider = new ethers.BrowserProvider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    signer = await provider.getSigner();
+    account = await signer.getAddress();
+    $("account").textContent = account;
+    await ensureNetwork();
+    setStatus(`Connected as ${short(account)} on ${net().name}.`, "success");
+    if ($("vaultInput").value) await loadVault();
+    else await refreshRoleLine();
+  } catch (err) { setStatus(explain(err), "error"); }
+}
+
+async function ensureNetwork() {
+  const target = net();
+  try {
+    await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: target.hex }] });
+  } catch (err) {
+    if (err.code === 4902) {
+      await window.ethereum.request({ method: "wallet_addEthereumChain", params: [{
+        chainId: target.hex, chainName: target.name,
+        rpcUrls: [target.rpc], blockExplorerUrls: target.explorer ? [target.explorer] : [],
+        nativeCurrency: { name: target.currency, symbol: target.currency, decimals: 18 },
+      }]});
+    } else throw err;
+  }
+}
+
+async function refreshRoleLine() {
+  if (!vault || !account) return;
+  const owner = await vault.owner();
+  $("roleLine").textContent = account.toLowerCase() === owner.toLowerCase()
+    ? "You are the vault owner." : "You are not the vault owner — owner actions will revert.";
+}
+
+// --- Vault loading --------------------------------------------------------
+async function loadVault() {
+  const addr = $("vaultInput").value.trim() || VAULT_ADDRESS;
+  if (!ethers.isAddress(addr)) { setStatus("Enter a valid vault contract address.", "error"); return; }
+  if (!signer) { setStatus("Connect a wallet first.", "error"); return; }
+  try {
+    vault = new ethers.Contract(addr, VAULT_ABI, signer);
+    const tokenAddr = await vault.token();
+    token = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
+    decimals = Number(await token.decimals());
+    await refreshRoleLine();
+    await refreshDashboard();
+    await refreshAudit();
+    setStatus(`Vault loaded: ${addr}`, "success");
+  } catch (err) { setStatus("Could not load that vault: " + explain(err), "error"); }
+}
+
+async function refreshDashboard() {
+  if (!vault) return;
+  $("vaultBalance").textContent = fmt(await vault.vaultBalance()) + " tUSD8";
+  const count = Number(await vault.sessionCount());
+  const sel = $("sessionSelect");
+  sel.innerHTML = "";
+  for (let i = 0; i < count; i++) {
+    const opt = document.createElement("option");
+    opt.value = i; opt.textContent = `Session #${i}`;
+    sel.appendChild(opt);
+  }
+  if (count === 0) {
+    const opt = document.createElement("option");
+    opt.textContent = "No sessions yet"; sel.appendChild(opt);
+  }
+  sel.value = Math.min(currentSession, Math.max(0, count - 1));
+  currentSession = Number(sel.value);
+  await renderSession();
+}
+
+async function renderSession() {
+  const box = $("sessionBox");
+  const count = Number(await vault.sessionCount());
+  if (count === 0) { box.innerHTML = "<p class='muted'>No sessions yet. Grant one with the form on the right.</p>"; $("revokeBtn").disabled = true; return; }
+  const s = await vault.getSession(currentSession);
+  const remaining = await vault.remainingCap(currentSession);
+  const now = Math.floor(Date.now() / 1000);
+  const expired = now > Number(s.expiry);
+  const pct = s.cap > 0n ? Number((s.spent * 100n) / s.cap) : 0;
+  const state = s.revoked ? `<span class="badge no">revoked</span>`
+    : expired ? `<span class="badge warn">expired</span>` : `<span class="badge ok">active</span>`;
+  box.innerHTML = `
+    <div class="row" style="justify-content:space-between"><span>${state}</span>
+      <span class="muted mono">agent ${short(s.agent)}</span></div>
+    <div style="margin-top:10px"><span class="muted">Spent</span>
+      <div class="stat" style="font-size:20px">${fmt(s.spent)} / ${fmt(s.cap)} tUSD8</div>
+      <div class="bar"><div style="width:${Math.min(100, pct)}%"></div></div>
+      <div class="muted" style="margin-top:4px">Remaining: ${fmt(remaining)} · per-payment cap: ${fmt(s.perTxCap)}</div></div>
+    <div style="margin-top:10px"><span class="muted">Expires: </span><span id="countdown"></span></div>
+    <div style="margin-top:10px"><span class="muted">Allowlisted recipients:</span><br>
+      ${s.recipients.map((r) => `<span class="chip">${r}</span>`).join("")}</div>`;
+  $("revokeBtn").disabled = s.revoked || expired;
+  clearInterval(countdownTimer);
+  const tick = () => {
+    const left = Number(s.expiry) - Math.floor(Date.now() / 1000);
+    const el = $("countdown");
+    if (!el) return;
+    el.textContent = left <= 0 ? "expired" : `${Math.floor(left / 3600)}h ${Math.floor((left % 3600) / 60)}m ${left % 60}s remaining`;
+  };
+  tick();
+  countdownTimer = setInterval(tick, 1000);
+}
+
+// --- Owner actions --------------------------------------------------------
+async function deposit() {
+  const amount = ethers.parseUnits($("depositAmt").value || "0", decimals);
+  if (amount <= 0n) { setStatus("Enter an amount above zero.", "error"); return; }
+  try {
+    setStatus("Step 1/2: approving the vault to pull tUSD8…");
+    const allowance = await token.allowance(account, await vault.getAddress());
+    if (allowance < amount) {
+      const tx1 = await token.approve(await vault.getAddress(), amount);
+      await tx1.wait();
+    }
+    setStatus("Step 2/2: depositing…");
+    const tx2 = await vault.deposit(amount);
+    await tx2.wait();
+    setStatus(`Deposited ${fmt(amount)} tUSD8. Tx: ${tx2.hash}`, "success");
+    await refreshDashboard(); await refreshAudit();
+  } catch (err) { setStatus(explain(err), "error"); }
+}
+
+async function withdraw() {
+  const amount = ethers.parseUnits($("withdrawAmt").value || "0", decimals);
+  if (amount <= 0n) { setStatus("Enter an amount above zero.", "error"); return; }
+  try {
+    setStatus("Withdrawing…");
+    const tx = await vault.withdraw(amount);
+    await tx.wait();
+    setStatus(`Withdrew ${fmt(amount)} tUSD8. Tx: ${tx.hash}`, "success");
+    await refreshDashboard(); await refreshAudit();
+  } catch (err) { setStatus(explain(err), "error"); }
+}
+
+async function createSession() {
+  const agent = $("sessAgent").value.trim();
+  const recipients = $("sessRecipients").value.split("\n").map((s) => s.trim()).filter(Boolean);
+  const cap = ethers.parseUnits($("sessCap").value || "0", decimals);
+  const perTx = ethers.parseUnits($("sessPerTx").value || "0", decimals);
+  const hours = parseFloat($("sessHours").value || "0");
+  if (!ethers.isAddress(agent)) { setStatus("Enter a valid agent address.", "error"); return; }
+  if (recipients.some((r) => !ethers.isAddress(r))) { setStatus("One of the recipient addresses is invalid.", "error"); return; }
+  try {
+    setStatus("Creating session…");
+    const expiry = Math.floor(Date.now() / 1000) + Math.floor(hours * 3600);
+    const tx = await vault.createSession(agent, cap, perTx, expiry, recipients);
+    const receipt = await tx.wait();
+    setStatus(`Session created. Tx: ${tx.hash}`, "success");
+    currentSession = Number(await vault.sessionCount()) - 1;
+    await refreshDashboard(); await refreshAudit();
+  } catch (err) { setStatus(explain(err), "error"); }
+}
+
+async function revoke() {
+  try {
+    setStatus("Revoking session…");
+    const tx = await vault.revokeSession(currentSession);
+    await tx.wait();
+    setStatus(`Session #${currentSession} revoked. The agent can no longer pay.`, "success");
+    await refreshDashboard(); await refreshAudit();
+  } catch (err) { setStatus(explain(err), "error"); }
+}
+
+// --- Audit log ------------------------------------------------------------
+async function refreshAudit() {
+  const body = $("auditBody");
+  if (!vault) return;
+  body.innerHTML = `<tr><td colspan="3" class="muted">Loading events…</td></tr>`;
+  try {
+    const events = await vault.queryFilter("*", 0, "latest");
+    events.sort((a, b) => Number(b.blockNumber - a.blockNumber) || (b.index - a.index));
+    if (events.length === 0) { body.innerHTML = `<tr><td colspan="3" class="muted">No events yet.</td></tr>`; return; }
+    body.innerHTML = events.slice(0, 50).map((e) => {
+      const a = e.args;
+      let detail = "";
+      if (e.fragment.name === "PaymentExecuted")
+        detail = `${fmt(a.amount)} tUSD8 → ${short(a.to)} · “${a.memo}” · session #${a.sessionId}`;
+      else if (e.fragment.name === "SessionCreated")
+        detail = `session #${a.sessionId} · agent ${short(a.agent)} · cap ${fmt(a.cap)} · per-tx ${fmt(a.perTxCap)} · ${a.recipients.length} recipients`;
+      else if (e.fragment.name === "SessionRevoked")
+        detail = `session #${a.sessionId} · agent ${short(a.agent)}`;
+      else if (e.fragment.name === "Deposited")
+        detail = `${fmt(a.amount)} tUSD8 from ${short(a.from)}`;
+      else if (e.fragment.name === "Withdrawn")
+        detail = `${fmt(a.amount)} tUSD8 to ${short(a.to)}`;
+      return `<tr><td><span class="badge info">${e.fragment.name}</span></td><td>${detail}</td><td>${explorerTx(e.transactionHash)}</td></tr>`;
+    }).join("");
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="3" class="error">Could not load events: ${explain(err)}</td></tr>`;
+  }
+}
+
+// --- Proposals ------------------------------------------------------------
+async function refreshProposals() {
+  const box = $("proposals");
+  try {
+    const res = await fetch("proposals.json", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.proposals?.length) return;
+    box.innerHTML = `<p class="muted">Run at ${data.generatedAt} · vault <span class="mono">${short(data.vault)}</span> · session #${data.sessionId}</p>` +
+      `<table><thead><tr><th>Invoice</th><th>Payee</th><th>Amount</th><th>Decision</th><th>Tx</th></tr></thead><tbody>` +
+      data.proposals.map((p) => {
+        const badge = p.status === "executed" ? `<span class="badge ok">paid</span>`
+          : p.status === "rejected" ? `<span class="badge no">rejected</span>`
+          : `<span class="badge warn">${p.status}</span>`;
+        const tx = p.txHash ? (p.explorerUrl ? `<a href="${p.explorerUrl}" target="_blank" rel="noopener">${short(p.txHash)}</a>` : `<span class="mono">${short(p.txHash)}</span>`) : "—";
+        return `<tr><td>${p.id}</td><td>${p.payeeName}<br><span class="mono">${short(p.payee)}</span></td><td>${p.amount}</td><td>${badge}<br><span class="muted">${p.reason}</span></td><td>${tx}</td></tr>`;
+      }).join("") + `</tbody></table>`;
+  } catch { /* no proposal log yet — the placeholder stays */ }
+}
+
+// --- Wire up --------------------------------------------------------------
+$("connectBtn").addEventListener("click", connect);
+$("loadBtn").addEventListener("click", loadVault);
+$("refreshBtn").addEventListener("click", async () => { await refreshDashboard(); await refreshAudit(); });
+$("sessionSelect").addEventListener("change", (e) => { currentSession = Number(e.target.value); renderSession(); });
+$("depositBtn").addEventListener("click", deposit);
+$("withdrawBtn").addEventListener("click", withdraw);
+$("createBtn").addEventListener("click", createSession);
+$("revokeBtn").addEventListener("click", revoke);
+$("network").addEventListener("change", async () => { if (provider) await ensureNetwork(); });
+if (VAULT_ADDRESS) $("vaultInput").value = VAULT_ADDRESS;
+refreshProposals();
+</script>
+</body>
+</html>
