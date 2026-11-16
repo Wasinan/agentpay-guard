@@ -66,7 +66,7 @@
       <input id="vaultInput" placeholder="AgentVault contract address" style="flex:1" spellcheck="false">
       <button id="loadBtn" class="ghost">Load</button>
     </div>
-    <p id="status" class="muted">Connect a wallet, then paste the deployed vault address (or use the default once deployed).</p>
+    <p id="status" class="muted">Loading vault data from Aevum testnet…</p>
     <div class="grid" style="margin-top:12px">
       <div><div class="muted">Vault tUSD8 balance</div><div class="stat" id="vaultBalance">—</div></div>
       <div><div class="muted">Your account</div><div class="mono" id="account">not connected</div>
@@ -131,6 +131,7 @@ import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.17.0/+esm";
 
 // --- Config ---------------------------------------------------------------
 const VAULT_ADDRESS = "0xf41aA12e0F4152953e7bAe68a1E562a6CD7967B8"; // deployed on Aevum testnet 2026-11-16
+const DEPLOY_BLOCK = 3317142; // block the vault was deployed in (audit log paging start)
 const TUSD8_AEVUM = "0x456569838f1d43009A91ebA4263147Afd7233483";
 const NETWORKS = {
   aevum: { chainId: 44005, hex: "0xABE5", rpc: "https://rpc-test.qday.info",
@@ -243,16 +244,19 @@ async function refreshRoleLine() {
 async function loadVault() {
   const addr = $("vaultInput").value.trim() || VAULT_ADDRESS;
   if (!ethers.isAddress(addr)) { setStatus("Enter a valid vault contract address.", "error"); return; }
-  if (!signer) { setStatus("Connect a wallet first.", "error"); return; }
   try {
-    vault = new ethers.Contract(addr, VAULT_ABI, signer);
+    // Read-only when no wallet is connected: the public RPC serves every
+    // dashboard read, so the demo works with zero setup. Writes still need
+    // a connected wallet (guarded in each action below).
+    const runner = signer || new ethers.JsonRpcProvider(net().rpc);
+    vault = new ethers.Contract(addr, VAULT_ABI, runner);
     const tokenAddr = await vault.token();
-    token = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
+    token = new ethers.Contract(tokenAddr, ERC20_ABI, runner);
     decimals = Number(await token.decimals());
     await refreshRoleLine();
     await refreshDashboard();
     await refreshAudit();
-    setStatus(`Vault loaded: ${addr}`, "success");
+    setStatus(signer ? `Vault loaded: ${addr}` : `Vault loaded (read-only — connect a wallet to act): ${addr}`, "success");
   } catch (err) { setStatus("Could not load that vault: " + explain(err), "error"); }
 }
 
@@ -271,8 +275,9 @@ async function refreshDashboard() {
     const opt = document.createElement("option");
     opt.textContent = "No sessions yet"; sel.appendChild(opt);
   }
-  sel.value = Math.min(currentSession, Math.max(0, count - 1));
-  currentSession = Number(sel.value);
+  // Default to the newest session (the live demo session).
+  currentSession = Math.max(0, count - 1);
+  sel.value = currentSession;
   await renderSession();
 }
 
@@ -311,6 +316,7 @@ async function renderSession() {
 
 // --- Owner actions --------------------------------------------------------
 async function deposit() {
+  if (!signer) { setStatus("Connect a wallet first — this action writes on-chain.", "error"); return; }
   const amount = ethers.parseUnits($("depositAmt").value || "0", decimals);
   if (amount <= 0n) { setStatus("Enter an amount above zero.", "error"); return; }
   try {
@@ -329,6 +335,7 @@ async function deposit() {
 }
 
 async function withdraw() {
+  if (!signer) { setStatus("Connect a wallet first — this action writes on-chain.", "error"); return; }
   const amount = ethers.parseUnits($("withdrawAmt").value || "0", decimals);
   if (amount <= 0n) { setStatus("Enter an amount above zero.", "error"); return; }
   try {
@@ -341,6 +348,7 @@ async function withdraw() {
 }
 
 async function createSession() {
+  if (!signer) { setStatus("Connect a wallet first — this action writes on-chain.", "error"); return; }
   const agent = $("sessAgent").value.trim();
   const recipients = $("sessRecipients").value.split("\n").map((s) => s.trim()).filter(Boolean);
   const cap = ethers.parseUnits($("sessCap").value || "0", decimals);
@@ -360,6 +368,7 @@ async function createSession() {
 }
 
 async function revoke() {
+  if (!signer) { setStatus("Connect a wallet first — this action writes on-chain.", "error"); return; }
   try {
     setStatus("Revoking session…");
     const tx = await vault.revokeSession(currentSession);
@@ -375,7 +384,24 @@ async function refreshAudit() {
   if (!vault) return;
   body.innerHTML = `<tr><td colspan="3" class="muted">Loading events…</td></tr>`;
   try {
-    const events = await vault.queryFilter("*", 0, "latest");
+    // Aevum's public RPC caps eth_getLogs at 1000 blocks per call, so page
+    // through windows: the deploy window (all demo events live there) plus
+    // the most recent 1000 blocks for anything newer.
+    const prov = vault.runner.provider ?? vault.runner;
+    const latest = await prov.getBlockNumber();
+    const windows = [];
+    const end0 = Math.min(latest, DEPLOY_BLOCK + 4999);
+    for (let s = DEPLOY_BLOCK; s <= end0; s += 1000) windows.push([s, Math.min(end0, s + 999)]);
+    const tailStart = Math.max(end0 + 1, latest - 999);
+    if (tailStart <= latest) windows.push([tailStart, latest]);
+    const seen = new Set();
+    const events = [];
+    for (const [f, t] of windows) {
+      for (const e of await vault.queryFilter("*", f, t)) {
+        const k = e.transactionHash + ":" + e.index;
+        if (!seen.has(k)) { seen.add(k); events.push(e); }
+      }
+    }
     events.sort((a, b) => Number(b.blockNumber - a.blockNumber) || (b.index - a.index));
     if (events.length === 0) { body.innerHTML = `<tr><td colspan="3" class="muted">No events yet.</td></tr>`; return; }
     body.innerHTML = events.slice(0, 50).map((e) => {
@@ -430,6 +456,7 @@ $("revokeBtn").addEventListener("click", revoke);
 $("network").addEventListener("change", async () => { if (provider) await ensureNetwork(); });
 if (VAULT_ADDRESS) $("vaultInput").value = VAULT_ADDRESS;
 refreshProposals();
+if (VAULT_ADDRESS) loadVault(); // read-only auto-load: no wallet needed to view the demo
 </script>
 </body>
 </html>
